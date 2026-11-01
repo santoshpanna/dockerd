@@ -163,6 +163,47 @@ public enum DockGeometry {
     }
 }
 
+public enum DockClearance {
+    public static let minimumExtent: CGFloat = 200
+    static let tolerance: CGFloat = 1
+
+    public static func clearedFrame(window: CGRect, display: CGRect, edge: DockEdge, thickness: CGFloat) -> CGRect? {
+        guard thickness > 0, window.width > 0, window.height > 0, window.intersects(display) else { return nil }
+        var next = window
+        switch edge {
+        case .bottom:
+            let limit = display.maxY - thickness
+            guard window.maxY > limit + tolerance else { return nil }
+            if limit - window.minY >= minimumExtent {
+                next.size.height = limit - window.minY
+            } else {
+                next.origin.y = max(display.minY, limit - window.height)
+                next.size.height = min(window.height, limit - next.minY)
+            }
+        case .left:
+            let limit = display.minX + thickness
+            guard window.minX < limit - tolerance else { return nil }
+            if window.maxX - limit >= minimumExtent {
+                next.origin.x = limit
+                next.size.width = window.maxX - limit
+            } else {
+                next.origin.x = limit
+                next.size.width = min(window.width, display.maxX - limit)
+            }
+        case .right:
+            let limit = display.maxX - thickness
+            guard window.maxX > limit + tolerance else { return nil }
+            if limit - window.minX >= minimumExtent {
+                next.size.width = limit - window.minX
+            } else {
+                next.origin.x = max(display.minX, limit - window.width)
+                next.size.width = min(window.width, limit - next.minX)
+            }
+        }
+        return next == window ? nil : next
+    }
+}
+
 public enum FullScreenCandidates {
     public static let minimumHeightFraction: CGFloat = 0.9
 

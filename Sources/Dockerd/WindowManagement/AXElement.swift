@@ -50,6 +50,20 @@ extension AXUIElement {
     }
 
     @discardableResult
+    func set(_ attribute: String, point: CGPoint) -> AXError {
+        var value = point
+        guard let axValue = AXValueCreate(.cgPoint, &value) else { return .failure }
+        return AXUIElementSetAttributeValue(self, attribute as CFString, axValue)
+    }
+
+    @discardableResult
+    func set(_ attribute: String, size: CGSize) -> AXError {
+        var value = size
+        guard let axValue = AXValueCreate(.cgSize, &value) else { return .failure }
+        return AXUIElementSetAttributeValue(self, attribute as CFString, axValue)
+    }
+
+    @discardableResult
     func perform(_ action: String) -> AXError {
         AXUIElementPerformAction(self, action as CFString)
     }

@@ -1,5 +1,6 @@
 import AppKit
 import DockerdCore
+import os
 
 protocol DockItemViewDelegate: AnyObject {
     func dockItemClicked(_ view: DockItemView)
@@ -9,6 +10,7 @@ protocol DockItemViewDelegate: AnyObject {
 }
 
 final class DockItemView: NSView, NSDraggingSource {
+    private static let logger = Logger(subsystem: "me.santoshpanna.Dockerd", category: "dock")
     weak var delegate: DockItemViewDelegate?
     private(set) var item: DockItem
     private var metrics: DockMetrics
@@ -137,7 +139,11 @@ final class DockItemView: NSView, NSDraggingSource {
         }
         guard !dragStarted else { return }
         let point = convert(event.locationInWindow, from: nil)
-        if bounds.contains(point) { delegate?.dockItemClicked(self) }
+        if bounds.contains(point) {
+            delegate?.dockItemClicked(self)
+        } else {
+            Self.logger.notice("click dropped: mouse up outside item app=\(self.item.appKey, privacy: .public)")
+        }
     }
 
     override func rightMouseDown(with event: NSEvent) {

@@ -21,9 +21,10 @@ final class WindowActions {
         if element.bool(kAXMinimizedAttribute) == true {
             element.set(kAXMinimizedAttribute, false)
         }
-        element.set(kAXMainAttribute, true)
-        element.perform(kAXRaiseAction)
+        let main = element.set(kAXMainAttribute, true)
+        let raise = element.perform(kAXRaiseAction)
         let frontmost = tracker.appElement(window.pid).set(kAXFrontmostAttribute, true)
+        logger.notice("activate window pid=\(window.pid, privacy: .public) app=\(window.bundleID ?? "?", privacy: .public) main=\(main.rawValue, privacy: .public) raise=\(raise.rawValue, privacy: .public) frontmost=\(frontmost.rawValue, privacy: .public)")
         if frontmost != .success { activateApp(pid: window.pid) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
             MainActor.assumeIsolated {
@@ -33,6 +34,30 @@ final class WindowActions {
                 self.tracker.markDirty(window.pid)
             }
         }
+        verifyFrontmost(pid: window.pid)
+    }
+
+    private func verifyFrontmost(pid: pid_t) {
+        let logger = self.logger
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            let front = NSWorkspace.shared.frontmostApplication
+            if front?.processIdentifier == pid {
+                logger.notice("activate ok pid=\(pid, privacy: .public)")
+            } else {
+                logger.error("activate failed pid=\(pid, privacy: .public) frontmost=\(front?.processIdentifier ?? -1, privacy: .public) \(front?.bundleIdentifier ?? "?", privacy: .public)")
+            }
+        }
+    }
+
+    func setFrame(_ window: WindowInfo, to frame: CGRect) -> Bool {
+        guard let element = tracker.element(for: window.id) else { return false }
+        let size1 = element.set(kAXSizeAttribute, size: frame.size)
+        let position = element.set(kAXPositionAttribute, point: frame.origin)
+        let size2 = element.set(kAXSizeAttribute, size: frame.size)
+        let ok = position == .success && (size1 == .success || size2 == .success)
+        logger.notice("clear dock pid=\(window.pid, privacy: .public) app=\(window.bundleID ?? "?", privacy: .public) to=\(String(describing: frame), privacy: .public) ok=\(ok, privacy: .public)")
+        tracker.markDirty(window.pid)
+        return ok
     }
 
     func minimize(_ window: WindowInfo) {
@@ -56,8 +81,11 @@ final class WindowActions {
     func activateApp(pid: pid_t) {
         guard let app = NSRunningApplication(processIdentifier: pid) else { return }
         if app.isHidden { app.unhide() }
-        if tracker.accessibilityEnabled, tracker.appElement(pid).set(kAXFrontmostAttribute, true) == .success {
-            return
+        defer { verifyFrontmost(pid: pid) }
+        if tracker.accessibilityEnabled {
+            let frontmost = tracker.appElement(pid).set(kAXFrontmostAttribute, true)
+            logger.notice("activate app pid=\(pid, privacy: .public) app=\(app.bundleIdentifier ?? "?", privacy: .public) frontmost=\(frontmost.rawValue, privacy: .public)")
+            if frontmost == .success { return }
         }
         if #available(macOS 14.0, *) {
             NSApp.yieldActivation(to: app)

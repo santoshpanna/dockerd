@@ -20,6 +20,9 @@ final class DockController: NSObject {
     private var sessionWindowOrder: [WindowID] = []
     private var badges: [DockBadge] = []
     private var launches = LaunchTracker()
+    private var clearanceAttempts: [WindowID: CGRect] = [:]
+    private var clearanceRetry: DispatchWorkItem?
+    private var lastFullScreen = Set<UInt32>()
     private let logger = Logger(subsystem: "me.santoshpanna.Dockerd", category: "dock")
 
     var onOpenSettings: (() -> Void)?
@@ -200,6 +203,7 @@ final class DockController: NSObject {
         let running = Set(tracker.appList.compactMap { $0.bundlePath.map(Self.normalizedPath) })
         launches.settle(runningPaths: running, now: Date())
         let fullScreen = fullScreenDisplayIDs()
+        lastFullScreen = fullScreen
         for controller in panels.values {
             let items = DockDecorations.apply(
                 to: TaskbarLayoutBuilder.build(layoutInput(displayID: controller.display.id)),
@@ -218,6 +222,49 @@ final class DockController: NSObject {
         if let listID = windowList.itemID, !panels.values.contains(where: { $0.bar.itemViews.contains { $0.item.id == listID } }) {
             windowList.dismiss()
         }
+        scheduleClearance()
+    }
+
+    private func keepWindowsClear(fullScreen: Set<UInt32>) {
+        let current = settings
+        guard accessibilityGranted, current.dockVisible, !current.appearance.autoHide else {
+            clearanceAttempts.removeAll()
+            return
+        }
+        if NSEvent.pressedMouseButtons != 0 {
+            scheduleClearance()
+            return
+        }
+        let thickness = DockMetrics(appearance: current.appearance).thickness
+        let edge = current.appearance.edge
+        let windows = tracker.windows
+        clearanceAttempts = clearanceAttempts.filter { id, _ in windows.contains { $0.id == id } }
+        for window in windows where window.presence == .onScreen && !window.isMinimized {
+            guard let frame = window.frame,
+                  let display = WindowDisplayAssigner.display(for: frame, among: displays),
+                  panels[display.id] != nil, !fullScreen.contains(display.id),
+                  let target = DockClearance.clearedFrame(window: frame, display: display.frame, edge: edge, thickness: thickness)
+            else {
+                clearanceAttempts[window.id] = nil
+                continue
+            }
+            if clearanceAttempts[window.id] == frame { continue }
+            clearanceAttempts[window.id] = frame
+            _ = actions.setFrame(window, to: target)
+        }
+    }
+
+    private func scheduleClearance() {
+        clearanceRetry?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.clearanceRetry = nil
+                self.keepWindowsClear(fullScreen: self.lastFullScreen)
+            }
+        }
+        clearanceRetry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     private func controller(for view: NSView) -> DockPanelController? {
@@ -255,6 +302,7 @@ final class DockController: NSObject {
     }
 
     private func perform(_ item: DockItem, from view: DockItemView) {
+        logger.notice("click kind=\(String(describing: item.kind), privacy: .public) app=\(item.appKey, privacy: .public) windows=\(item.windows.count, privacy: .public) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?", privacy: .public)")
         hoverCard.dismiss()
         let wasNavigating = keyboardPanel != nil
         switch item.kind {
@@ -284,6 +332,8 @@ final class DockController: NSObject {
                 } else if !windowList.wasJustDismissed(itemID: item.id) {
                     let edge = settings.appearance.edge
                     windowList.present(item: item, anchor: screenRect(of: view), edge: edge)
+                } else {
+                    logger.notice("click ignored: window list just dismissed app=\(item.appKey, privacy: .public)")
                 }
                 return
             }

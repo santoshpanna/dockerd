@@ -14,6 +14,38 @@ struct DisplayTests {
         #expect(WindowDisplayAssigner.display(for: mostlyLeft, among: [left, right])?.id == 1)
     }
 
+    @Test func clearanceShrinksWindowReachingUnderBottomDock() {
+        let window = CGRect(x: 0, y: 25, width: 1920, height: 1055)
+        let cleared = DockClearance.clearedFrame(window: window, display: left.frame, edge: .bottom, thickness: 64)
+        #expect(cleared == CGRect(x: 0, y: 25, width: 1920, height: 991))
+    }
+
+    @Test func clearanceLeavesWindowAboveDockAlone() {
+        let window = CGRect(x: 100, y: 100, width: 800, height: 600)
+        #expect(DockClearance.clearedFrame(window: window, display: left.frame, edge: .bottom, thickness: 64) == nil)
+        let touching = CGRect(x: 0, y: 25, width: 1920, height: 991)
+        #expect(DockClearance.clearedFrame(window: touching, display: left.frame, edge: .bottom, thickness: 64) == nil)
+    }
+
+    @Test func clearanceMovesShortWindowUpInsteadOfCrushingIt() {
+        let window = CGRect(x: 100, y: 900, width: 400, height: 150)
+        let cleared = DockClearance.clearedFrame(window: window, display: left.frame, edge: .bottom, thickness: 64)
+        #expect(cleared == CGRect(x: 100, y: 866, width: 400, height: 150))
+    }
+
+    @Test func clearanceHandlesSideEdges() {
+        let window = CGRect(x: 1920, y: 25, width: 1920, height: 1055)
+        let leftEdge = DockClearance.clearedFrame(window: window, display: right.frame, edge: .left, thickness: 64)
+        #expect(leftEdge == CGRect(x: 1984, y: 25, width: 1856, height: 1055))
+        let rightEdge = DockClearance.clearedFrame(window: window, display: right.frame, edge: .right, thickness: 64)
+        #expect(rightEdge == CGRect(x: 1920, y: 25, width: 1856, height: 1055))
+    }
+
+    @Test func clearanceIgnoresWindowsOnOtherDisplays() {
+        let window = CGRect(x: 2000, y: 25, width: 800, height: 1055)
+        #expect(DockClearance.clearedFrame(window: window, display: left.frame, edge: .bottom, thickness: 64) == nil)
+    }
+
     @Test func unknownFrameFallsBackToPrimary() {
         #expect(WindowDisplayAssigner.display(for: nil, among: [right, left])?.id == 1)
     }
